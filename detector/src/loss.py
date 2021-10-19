@@ -138,8 +138,8 @@ def compute_detect_loss(labels,outputs,anchors,CFG):
     cls_mask = tf.cast(cls_mask, outputs.dtype)
     reg_mask = tf.cast(reg_mask, outputs.dtype)
 
-    neg_mask = tf.cast(neg_mask, outputs.dtype)
-    cls_labels = cls_labels*cls_mask+(1-neg_mask)*CFG['num_classes']
+    cls_labels = cls_labels*reg_mask+(1-reg_mask)*CFG['num_classes']
+
 
     cls_loss = compute_cls_loss(cls_outputs, cls_labels, CFG)
     reg_loss = compute_reg_loss(bbox_outputs, box_labels, anchors, CFG)

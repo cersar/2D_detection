@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 
-
 def decode_box_outputs(box_out, anchors):
     pred_x, pred_y, pred_w, pred_h = tf.unstack(box_out, num=4, axis=-1)
     anchor_x, anchor_y, anchor_w, anchor_h = tf.unstack(anchors, num=4, axis=-1)
@@ -75,7 +74,7 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
     C = get_envelope_box(bbox1, bbox2)
     if iou_type == 'giou':
         C_area = (C[..., 2] - C[..., 0]) * (C[..., 3] - C[..., 1])
-        iou -= (1 - union / C_area)
+        iou -= (1 - union / (C_area+eps))
         return iou
 
     bbox1_xywh = x1y1x2y2_to_xywh(bbox1)
@@ -83,15 +82,15 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
     D_box = tf.norm(bbox1_xywh[..., :2] - bbox2_xywh[..., :2], axis=-1)
     D = tf.norm(C[..., :2] - C[..., 2:], axis=-1)
     if iou_type == 'diou':
-        iou -= (D_box / D) ** 2
+        iou -= (D_box / (D+eps)) ** 2
         return iou
 
     arc_tan1 = tf.math.atan2(bbox1_xywh[..., 2], bbox1_xywh[..., 3])
     arc_tan2 = tf.math.atan2(bbox2_xywh[..., 2], bbox2_xywh[..., 3])
     V = (4 / np.pi ** 2) * (arc_tan1 - arc_tan2) ** 2
-    alpha = V / (1 - iou + V)
+    alpha = V / (1 - iou + V+eps)
 
-    iou -= (D_box / D) ** 2 + alpha * V
+    iou -= (D_box / (D+eps)) ** 2 + alpha * V
 
     return iou
 
