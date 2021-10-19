@@ -41,7 +41,7 @@ class BiFPN_Block(tf.keras.layers.Layer):
             w = []
             w.append(self.add_weight(name='w{}_2_1'.format(i)))
             w.append(self.add_weight(name='w{}_2_2'.format(i)))
-            if i != 0 or i != len(input_shape):
+            if i != self.fpn_levels[0] and i != self.fpn_levels[-1]:
                 w.append(self.add_weight(name='w{}_2_3'.format(i)))
             self.w_l2.append(w)
 
@@ -97,7 +97,9 @@ def detect_cls_head(inputs,CFG):
                 features[j] = tf.keras.activations.swish(features[j])
         head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*CFG['num_classes'], 3, use_bias=True, padding='same')
         for i in range(len(features)):
-            features[i] = tf.reshape(head(features[i]),(tf.shape(features[i])[0],-1,CFG['num_classes']))
+            x = head(features[i])
+            features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],CFG['num_classes']))
+
         output = tf.concat(features,axis=1)
         output = tf.sigmoid(output)
     else:
@@ -115,9 +117,10 @@ def detect_reg_head(inputs,CFG):
                 features[j] = tf.keras.activations.swish(features[j])
         head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*4, 3, use_bias=True, padding='same')
         for i in range(len(features)):
-            features[i] = detect_conv(features[i])
-            features[i] = tf.keras.layers.BatchNormalization()(features[i])
-            features[i] = tf.reshape(head(features[i]),(tf.shape(features[i])[0],-1,4))
+            x = detect_conv(features[i])
+            x = tf.keras.layers.BatchNormalization()(x)
+            x = head(x)
+            features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],4))
         output = tf.concat(features,axis=1)
     else:
         raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
@@ -156,8 +159,9 @@ def get_detector(CFG):
 
     cls_output = detect_cls_head(features,CFG)
     bbox_output = detect_reg_head(features, CFG)
+    outputs = tf.concat([cls_output,bbox_output],-1)
 
-    model = tf.keras.Model(backbone.inputs, outputs=(cls_output,bbox_output))
+    model = tf.keras.Model(backbone.inputs, outputs=outputs)
 
     anchors = gen_anchors(CFG)
     return model,anchors

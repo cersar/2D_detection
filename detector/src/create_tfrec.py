@@ -20,9 +20,9 @@ def serialize_example(image_id, image_data, label):
     example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
     return example_proto.SerializeToString()
 
-class_num = 3
+class_num = 2
 with tf.io.TFRecordWriter('../../test.tfrec') as f:
-    for i in range(20):
+    for i in range(64):
         image_id = 'test{}'.format(i)
         box_num = np.random.randint(1,11)
         label = np.zeros((box_num,5),np.float32)

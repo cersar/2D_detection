@@ -7,7 +7,7 @@ from tensorflow.keras.optimizers import Adam
 from detector.src.loss import compute_detect_loss
 from detector.src.model import get_detector
 
-obj_max_num = 50
+
 CFG = {
     'backbone_name':'EfficientNetB0',
     'input_shape' : (512,512,3),
@@ -29,15 +29,13 @@ CFG = {
     'cls_loss': 'focal_loss',
     'reg_loss': 'iou',
     'iou_type': 'ciou',
+    'obj_max_num': 50
 }
 
 CFG['num_anchors'] = len(CFG['anchors_scales'])*len(CFG['anchors_aspects'])
 
 
 model,anchors = get_detector(CFG)
-
-# print(anchors)
-plot_model(model)
 
 
 data_description = {
@@ -46,41 +44,38 @@ data_description = {
     "label": tf.io.VarLenFeature(tf.float32),
 }
 
-def _parse_data(example_proto,obj_max_num=50):
+def _parse_data(example_proto,CFG):
     # Parse the input tf.Example proto using the dictionary above.
     sample = tf.io.parse_single_example(example_proto, data_description)
     image = tf.io.decode_image(sample['image'])
     label = tf.sparse.to_dense(sample['label'])
     obj_num = tf.shape(label)[0]//5
     label = tf.reshape(label,(obj_num,5))
-    if obj_num < obj_max_num:
-        label = tf.pad(label, ((0, obj_max_num - obj_num), (0, 0)),constant_values=-1)
+    if obj_num < CFG['obj_max_num']:
+        label = tf.pad(label, ((0, CFG['obj_max_num'] - obj_num), (0, 0)),constant_values=-1)
     else:
-        label = label[:obj_max_num]
+        label = label[:CFG['obj_max_num']]
 
     return image,label
 
-dataset = tf.data.TFRecordDataset(['./test.tfrec']).map(partial(_parse_data,obj_max_num=obj_max_num)).batch(4)
+dataset = tf.data.TFRecordDataset(['./test.tfrec']).map(partial(_parse_data,CFG=CFG)).batch(3)
 
 optimizer = Adam(learning_rate=1e-3)
+# model.compile(optimizer=optimizer,loss=partial(compute_detect_loss,anchors=anchors,CFG=CFG))
 epoch = 20
+# model.fit(dataset,epochs=epoch)
 for i in range(epoch):
     print('Epoch {}'.format(i+1))
     for j,(image_batch,label_batch) in enumerate(dataset):
         start = time.perf_counter()
         with tf.GradientTape() as tape:
-            cls_out, bbox_out = model(image_batch)
-            loss = compute_detect_loss(cls_out, bbox_out,anchors,label_batch,CFG)
+            outputs = model(image_batch)
+            loss = compute_detect_loss(label_batch,outputs,anchors,CFG)
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
         end = time.perf_counter()
         print('step: {}, loss: {}, time cost: {}s'.format(j,loss,end-start))
-
-
-
-print(cls_out.shape,bbox_out.shape)
-
 
 
 model.save('model.h5')

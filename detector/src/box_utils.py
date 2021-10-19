@@ -39,7 +39,7 @@ def x1y1x2y2_to_xywh(bbox):
 def get_envelope_box(bbox1, bbox2):
     i_lt = tf.math.minimum(bbox1[..., :2], bbox2[..., :2])
     i_rd = tf.math.maximum(bbox1[..., 2:], bbox2[..., 2:])
-    box = tf.concat([i_lt, i_rd], 1)
+    box = tf.concat([i_lt, i_rd], -1)
     return box
 
 
@@ -97,14 +97,15 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
 
 
 def compute_iou_array(anchors, box_label):
-    anchors_num = tf.shape(anchors)[0]
-    box_num = tf.shape(box_label)[0]
+    batch_size = tf.shape(box_label)[0]
+    anchors_num = anchors.shape[0]
+    box_num = box_label.shape[1]
 
     anchors_coord = xywh_to_x1y1x2y2(anchors)
-    anchors_coord = tf.tile(tf.expand_dims(anchors_coord, 1), (1, box_num, 1))
+    anchors_coord = tf.tile(tf.expand_dims(tf.expand_dims(anchors_coord, 1), 0), (batch_size,1, box_num, 1))
 
     box_label_coord = xywh_to_x1y1x2y2(box_label)
-    box_label_coord = tf.tile(tf.expand_dims(box_label_coord, 0), (anchors_num, 1, 1))
+    box_label_coord = tf.tile(tf.expand_dims(box_label_coord, 1), (1,anchors_num, 1, 1))
 
     iou = compute_iou(anchors_coord, box_label_coord)
 
