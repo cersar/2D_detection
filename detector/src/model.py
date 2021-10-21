@@ -27,8 +27,6 @@ class BiFPN_Block(tf.keras.layers.Layer):
 
         self.act = tf.keras.activations.swish
 
-    def build(self, input_shape):
-        assert len(input_shape) == len(self.fpn_levels)
         self.w_l1 = []
         self.w_l2 = []
         for i in self.fpn_levels[1:-1]:
@@ -44,6 +42,10 @@ class BiFPN_Block(tf.keras.layers.Layer):
             if i != self.fpn_levels[0] and i != self.fpn_levels[-1]:
                 w.append(self.add_weight(name='w{}_2_3'.format(i)))
             self.w_l2.append(w)
+
+    def build(self, input_shape):
+        assert len(input_shape) == len(self.fpn_levels)
+
 
     def call(self, inputs):
         tf.assert_equal(len(inputs),len(self.fpn_levels))
