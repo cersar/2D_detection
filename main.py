@@ -29,13 +29,17 @@ CFG = {
     'cls_loss': 'focal_loss',
     'reg_loss': 'iou',
     'iou_type': 'ciou',
-    'obj_max_num': 50
+    'obj_max_num': 50,
+    'nms_iou_thres': 0.5,
+    'nms_score_thres': 0.5,
+    'max_output_obj_num': 50
 }
 
 CFG['num_anchors'] = len(CFG['anchors_scales'])*len(CFG['anchors_aspects'])
 
 
 model,anchors = get_detector(CFG)
+
 
 
 data_description = {

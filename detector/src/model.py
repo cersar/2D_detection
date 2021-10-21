@@ -137,6 +137,7 @@ def detect_neck(features,CFG):
 
     return features
 
+
 def get_detector(CFG):
     backbone = get_backbone(CFG['backbone_name'],CFG['input_shape'])
     feature_layer_names = FEATURE_LAYER_NAMES_DICT[CFG['backbone_name']]
