@@ -83,50 +83,155 @@ class BiFPN_Block(tf.keras.layers.Layer):
 
 def get_backbone(backbone_name,input_shape,weights='noisy-student'):
     if backbone_name == 'EfficientNetB0':
-        backbone = EfficientNetB0(input_shape=input_shape, weights=weights, include_top=False)
+        backbone = EfficientNetB0(input_shape=input_shape, weights=weights, include_top=False, drop_connect_rate=0.0)
     else:
         raise ValueError('Invalid backbone {} !'.format(backbone_name))
     return backbone
 
-def detect_cls_head(inputs,CFG):
-    features = inputs.copy()
-    if CFG['detect_head'] == 'retina':
-        for i in range(CFG['detect_head_len']):
-            detect_conv = tf.keras.layers.SeparableConv2D(CFG['neck_width'],3,use_bias=True,padding='same')
-            for j in range(len(features)):
-                features[j] = detect_conv(features[j])
-                features[j] = tf.keras.layers.BatchNormalization()(features[j])
-                features[j] = tf.keras.activations.swish(features[j])
-        head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*CFG['num_classes'], 3, use_bias=True, padding='same')
-        for i in range(len(features)):
-            x = head(features[i])
-            features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],CFG['num_classes']))
+class RetinaClsHead(tf.keras.layers.Layer):
+    def __init__(self, num_classes, num_anchors, neck_width, detect_head_len, **kwargs):
+        super(RetinaClsHead, self).__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_anchors = num_anchors
+        self.neck_width = neck_width
+        self.detect_head_len = detect_head_len
+        self.head = tf.keras.layers.SeparableConv2D(num_anchors * num_classes, 3, use_bias=True,
+                                               padding='same')
+        self.detect_convs = []
+        for i in range(detect_head_len):
+            self.detect_convs.append(tf.keras.layers.SeparableConv2D(neck_width, 3, use_bias=True, padding='same'))
 
-        output = tf.concat(features,axis=1)
+        self.act = tf.keras.activations.swish
+
+    def build(self, input_shape):
+        print(input_shape)
+        self.bns = []
+        for i in range(self.detect_head_len):
+            tmp = []
+            for j in range(len(input_shape)):
+                tmp.append(tf.keras.layers.BatchNormalization())
+            self.bns.append(tmp)
+
+
+    def call(self, inputs):
+        features = inputs.copy()
+        for i in range(self.detect_head_len):
+            for j in range(len(features)):
+                features[j] = self.detect_convs[i](features[j])
+                features[j] = self.bns[i][j](features[j])
+                features[j] = self.act(features[j])
+        for i in range(len(features)):
+            x = self.head(features[i])
+            features[i] = tf.reshape(x, (-1, x.shape[1] * x.shape[2] * self.num_anchors, self.num_classes))
+
+        output = tf.concat(features, axis=1)
         output = tf.sigmoid(output)
-    else:
-        raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
-    return output
+        return output
 
-def detect_reg_head(inputs,CFG):
-    features = inputs.copy()
-    if CFG['detect_head'] == 'retina':
-        for i in range(CFG['detect_head_len']):
-            detect_conv = tf.keras.layers.SeparableConv2D(CFG['neck_width'],3,use_bias=True,padding='same')
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'num_classes': self.num_classes,
+            'num_anchors': self.num_anchors,
+            'neck_width': self.neck_width,
+            'detect_head_len': self.detect_head_len,
+        })
+        return config
+
+
+class RetinaRegHead(tf.keras.layers.Layer):
+    def __init__(self, num_anchors, neck_width, detect_head_len, **kwargs):
+        super(RetinaRegHead, self).__init__(**kwargs)
+        self.num_anchors = num_anchors
+        self.neck_width = neck_width
+        self.detect_head_len = detect_head_len
+        self.head = tf.keras.layers.SeparableConv2D(num_anchors * 4, 3, use_bias=True,
+                                               padding='same')
+        self.detect_convs = []
+        for i in range(detect_head_len):
+            self.detect_convs.append(tf.keras.layers.SeparableConv2D(neck_width, 3, use_bias=True, padding='same'))
+
+        self.act = tf.keras.activations.swish
+
+    def build(self, input_shape):
+        print(input_shape)
+        self.bns = []
+        for i in range(self.detect_head_len):
+            tmp = []
+            for j in range(len(input_shape)):
+                tmp.append(tf.keras.layers.BatchNormalization())
+            self.bns.append(tmp)
+
+
+    def call(self, inputs):
+        features = inputs.copy()
+        for i in range(self.detect_head_len):
             for j in range(len(features)):
-                features[j] = detect_conv(features[j])
-                features[j] = tf.keras.layers.BatchNormalization()(features[j])
-                features[j] = tf.keras.activations.swish(features[j])
-        head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*4, 3, use_bias=True, padding='same')
+                features[j] = self.detect_convs[i](features[j])
+                features[j] = self.bns[i][j](features[j])
+                features[j] = self.act(features[j])
         for i in range(len(features)):
-            x = detect_conv(features[i])
-            x = tf.keras.layers.BatchNormalization()(x)
-            x = head(x)
-            features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],4))
-        output = tf.concat(features,axis=1)
+            x = self.head(features[i])
+            features[i] = tf.reshape(x, (-1, x.shape[1] * x.shape[2] * self.num_anchors, 4))
+
+        output = tf.concat(features, axis=1)
+        output = tf.sigmoid(output)
+        return output
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'num_anchors': self.num_anchors,
+            'neck_width': self.neck_width,
+            'detect_head_len': self.detect_head_len,
+        })
+        return config
+
+def get_detect_head(CFG):
+    if CFG['detect_head'] == 'retina':
+        cls_head = RetinaClsHead(CFG['num_classes'],CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'])
+        reg_head = RetinaRegHead(CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'])
     else:
         raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
-    return output
+    return cls_head,reg_head
+
+# def detect_cls_head(inputs,CFG):
+#     features = inputs.copy()
+#     if CFG['detect_head'] == 'retina':
+#         for i in range(CFG['detect_head_len']):
+#             detect_conv = tf.keras.layers.SeparableConv2D(CFG['neck_width'],3,use_bias=True,padding='same')
+#             for j in range(len(features)):
+#                 features[j] = detect_conv(features[j])
+#                 features[j] = tf.keras.layers.BatchNormalization()(features[j])
+#                 features[j] = tf.keras.activations.swish(features[j])
+#         head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*CFG['num_classes'], 3, use_bias=True, padding='same')
+#         for i in range(len(features)):
+#             x = head(features[i])
+#             features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],CFG['num_classes']))
+#
+#         output = tf.concat(features,axis=1)
+#         output = tf.sigmoid(output)
+#     else:
+#         raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
+#     return output
+
+# def detect_reg_head(inputs,CFG):
+#     features = inputs.copy()
+#     if CFG['detect_head'] == 'retina':
+#         for i in range(CFG['detect_head_len']):
+#             detect_conv = tf.keras.layers.SeparableConv2D(CFG['neck_width'],3,use_bias=True,padding='same')
+#             for j in range(len(features)):
+#                 features[j] = detect_conv(features[j])
+#                 features[j] = tf.keras.layers.BatchNormalization()(features[j])
+#                 features[j] = tf.keras.activations.swish(features[j])
+#         head = tf.keras.layers.SeparableConv2D(CFG['num_anchors']*4, 3, use_bias=True, padding='same')
+#         for i in range(len(features)):
+#             x = head(features[i])
+#             features[i] = tf.reshape(x,(-1,x.shape[1]*x.shape[2]*CFG['num_anchors'],4))
+#         output = tf.concat(features,axis=1)
+#     else:
+#         raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
+#     return output
 
 def detect_neck(features,CFG):
     if CFG['neck'] == 'bifpn':
@@ -160,8 +265,9 @@ def get_detector(CFG):
 
     features = detect_neck(features,CFG)
 
-    cls_output = detect_cls_head(features,CFG)
-    bbox_output = detect_reg_head(features, CFG)
+    cls_head,reg_head = get_detect_head(CFG)
+    cls_output = cls_head(features)
+    bbox_output = reg_head(features)
     outputs = tf.concat([cls_output,bbox_output],-1)
 
     model = tf.keras.Model(backbone.inputs, outputs=outputs)
