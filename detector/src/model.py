@@ -83,7 +83,7 @@ class BiFPN_Block(tf.keras.layers.Layer):
 
 def get_backbone(backbone_name,input_shape,weights='noisy-student'):
     if backbone_name == 'EfficientNetB0':
-        backbone = EfficientNetB0(input_shape=input_shape, weights=weights, include_top=False, drop_connect_rate=0.0)
+        backbone = EfficientNetB0(input_shape=input_shape, weights=weights, include_top=False)
     else:
         raise ValueError('Invalid backbone {} !'.format(backbone_name))
     return backbone
