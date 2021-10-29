@@ -4,26 +4,28 @@ from detector.src.anchors import gen_anchors
 
 FEATURE_LAYER_NAMES_DICT = {'EfficientNetB0':['block3b_add','block5c_add','block7a_project_bn']}
 
-def fuse_conv(fpn_len):
+def fuse_conv(fpn_len,bn_trainable=True):
     return tf.keras.Sequential([
         tf.keras.layers.SeparableConv2D(fpn_len,3,use_bias=True,padding='same'),
-        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.BatchNormalization(trainable=bn_trainable),
         ])
 
 
 class BiFPN_Block(tf.keras.layers.Layer):
-    def __init__(self,fpn_levels, fpn_len, **kwargs):
+    def __init__(self,fpn_levels, fpn_len, bn_trainable, **kwargs):
         super(BiFPN_Block, self).__init__(**kwargs)
         self.fpn_levels = fpn_levels
         self.fpn_len = fpn_len
+        self.bn_trainable = bn_trainable
+
         self.fuse_conv_1 = []
         self.fuse_conv_2 = []
         self.up_sample = tf.keras.layers.UpSampling2D()
         self.down_sample = tf.keras.layers.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding='same')
         for i in self.fpn_levels[1:-1]:
-            self.fuse_conv_1.append(fuse_conv(fpn_len))
+            self.fuse_conv_1.append(fuse_conv(fpn_len,bn_trainable))
         for i in self.fpn_levels:
-            self.fuse_conv_2.append(fuse_conv(fpn_len))
+            self.fuse_conv_2.append(fuse_conv(fpn_len,bn_trainable))
 
         self.act = tf.keras.activations.swish
 
@@ -78,6 +80,7 @@ class BiFPN_Block(tf.keras.layers.Layer):
         config.update({
             'fpn_levels': self.fpn_levels,
             'fpn_len': self.fpn_len,
+            'bn_trainable': self.bn_trainable,
         })
         return config
 
@@ -89,12 +92,15 @@ def get_backbone(backbone_name,input_shape,weights='noisy-student'):
     return backbone
 
 class RetinaClsHead(tf.keras.layers.Layer):
-    def __init__(self, num_classes, num_anchors, neck_width, detect_head_len, **kwargs):
+    def __init__(self, num_classes, num_anchors, neck_width, detect_head_len, bn_trainable,**kwargs):
         super(RetinaClsHead, self).__init__(**kwargs)
         self.num_classes = num_classes
         self.num_anchors = num_anchors
         self.neck_width = neck_width
         self.detect_head_len = detect_head_len
+        self.bn_trainable = bn_trainable
+
+
         self.head = tf.keras.layers.SeparableConv2D(num_anchors * num_classes, 3, use_bias=True,
                                                padding='same')
         self.detect_convs = []
@@ -108,7 +114,7 @@ class RetinaClsHead(tf.keras.layers.Layer):
         for i in range(self.detect_head_len):
             tmp = []
             for j in range(len(input_shape)):
-                tmp.append(tf.keras.layers.BatchNormalization())
+                tmp.append(tf.keras.layers.BatchNormalization(trainable=self.bn_trainable))
             self.bns.append(tmp)
 
 
@@ -134,18 +140,21 @@ class RetinaClsHead(tf.keras.layers.Layer):
             'num_anchors': self.num_anchors,
             'neck_width': self.neck_width,
             'detect_head_len': self.detect_head_len,
+            'bn_trainable': self.bn_trainable,
         })
         return config
 
 
 class RetinaRegHead(tf.keras.layers.Layer):
-    def __init__(self, num_anchors, neck_width, detect_head_len, **kwargs):
+    def __init__(self, num_anchors, neck_width, detect_head_len, bn_trainable, **kwargs):
         super(RetinaRegHead, self).__init__(**kwargs)
         self.num_anchors = num_anchors
         self.neck_width = neck_width
         self.detect_head_len = detect_head_len
-        self.head = tf.keras.layers.SeparableConv2D(num_anchors * 4, 3, use_bias=True,
-                                               padding='same')
+        self.bn_trainable = bn_trainable
+
+
+        self.head = tf.keras.layers.SeparableConv2D(num_anchors * 4, 3, use_bias=True, padding='same')
         self.detect_convs = []
         for i in range(detect_head_len):
             self.detect_convs.append(tf.keras.layers.SeparableConv2D(neck_width, 3, use_bias=True, padding='same',name='detect_conv_{}'.format(i)))
@@ -157,7 +166,7 @@ class RetinaRegHead(tf.keras.layers.Layer):
         for i in range(self.detect_head_len):
             tmp = []
             for j in range(len(input_shape)):
-                tmp.append(tf.keras.layers.BatchNormalization(name='bn_{}_{}'.format(i,j)))
+                tmp.append(tf.keras.layers.BatchNormalization(trainable=self.bn_trainable,name='bn_{}_{}'.format(i,j)))
             self.bns.append(tmp)
 
 
@@ -173,7 +182,6 @@ class RetinaRegHead(tf.keras.layers.Layer):
             features[i] = tf.reshape(x, (-1, x.shape[1] * x.shape[2] * self.num_anchors, 4))
 
         output = tf.concat(features, axis=1)
-        output = tf.sigmoid(output)
         return output
 
     def get_config(self):
@@ -182,13 +190,14 @@ class RetinaRegHead(tf.keras.layers.Layer):
             'num_anchors': self.num_anchors,
             'neck_width': self.neck_width,
             'detect_head_len': self.detect_head_len,
+            'bn_trainable': self.bn_trainable,
         })
         return config
 
 def get_detect_head(CFG):
     if CFG['detect_head'] == 'retina':
-        cls_head = RetinaClsHead(CFG['num_classes'],CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'])
-        reg_head = RetinaRegHead(CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'])
+        cls_head = RetinaClsHead(CFG['num_classes'],CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'], CFG['bn_trainable'])
+        reg_head = RetinaRegHead(CFG['num_anchors'], CFG['neck_width'], CFG['detect_head_len'], CFG['bn_trainable'])
     else:
         raise ValueError('Invalid detect_head {} !'.format(CFG['detect_head']))
     return cls_head,reg_head
@@ -197,7 +206,7 @@ def get_detect_head(CFG):
 def detect_neck(features,CFG):
     if CFG['neck'] == 'bifpn':
         for i in range(CFG['neck_len']):
-            features = BiFPN_Block(CFG['pyramid_levels'],CFG['neck_width'], name='bifpn_block{}'.format(i))(features)
+            features = BiFPN_Block(CFG['pyramid_levels'],CFG['neck_width'], CFG['bn_trainable'], name='bifpn_block{}'.format(i))(features)
     else:
         raise ValueError('Invalid neck {} !'.format(CFG['neck']))
 

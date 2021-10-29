@@ -66,11 +66,12 @@ def smooth_l1_loss(box_out,box_label,anchors):
     reg_y = (box_label[..., 1] - anchors[..., 1]) / anchors[..., 3]
     reg_w = tf.math.log(box_label[..., 2] / anchors[..., 2])
     reg_h = tf.math.log(box_label[..., 3] / anchors[..., 3])
-    reg_target = tf.stack([reg_x, reg_y, reg_w, reg_h], axis=1)
+    reg_target = tf.stack([reg_x, reg_y, reg_w, reg_h], axis=-1)
 
     diff = tf.math.abs(box_out-reg_target)
     mask = tf.cast(diff<1,tf.float32)
     loss = 0.5*diff**2*mask+(diff-0.5)*(1-mask)
+    loss = tf.reduce_mean(loss,axis=-1)
     return loss
 
 def iou_loss(box_out,box_label,anchors,CFG):
@@ -148,7 +149,7 @@ def compute_detect_loss(labels,outputs,anchors,CFG):
     reg_loss = tf.reduce_sum(reg_loss*reg_mask,-1)/(tf.reduce_sum(reg_mask,-1)+eps)
 
     # print(tf.reduce_sum(reg_mask,-1))
-    # print('cls loss: {}, reg loss: {}'.format(tf.reduce_mean(CFG['cls_weight']*cls_loss),tf.reduce_mean(CFG['reg_weight']*reg_loss)))
+    print('cls loss: {}, reg loss: {}'.format(tf.reduce_mean(CFG['cls_weight']*cls_loss),tf.reduce_mean(CFG['reg_weight']*reg_loss)))
 
     loss = tf.reduce_mean(CFG['cls_weight']*cls_loss+CFG['reg_weight']*reg_loss)
     return loss
