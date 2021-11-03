@@ -52,7 +52,6 @@ def get_intersec_box(bbox1, bbox2):
 def compute_iou(bbox1, bbox2, iou_type='iou'):
     if iou_type not in ['iou', 'giou', 'diou', 'ciou']:
         raise ValueError('Invalid iou_type {} !'.format(iou_type))
-    eps = 1.e-10
 
     intersec_box = get_intersec_box(bbox1, bbox2)
 
@@ -66,7 +65,7 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
     s1 = (bbox1[..., 2] - bbox1[..., 0]) * (bbox1[..., 3] - bbox1[..., 1])
     s2 = (bbox2[..., 2] - bbox2[..., 0]) * (bbox2[..., 3] - bbox2[..., 1])
     union = s1 + s2 - intersec
-    iou = intersec / (union + eps)
+    iou = tf.math.divide_no_nan(intersec ,union)
 
     if iou_type == 'iou':
         return iou
@@ -74,7 +73,7 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
     C = get_envelope_box(bbox1, bbox2)
     if iou_type == 'giou':
         C_area = (C[..., 2] - C[..., 0]) * (C[..., 3] - C[..., 1])
-        iou -= (1 - union / (C_area+eps))
+        iou -= tf.math.divide_no_nan(1 - union , C_area)
         return iou
 
     bbox1_xywh = x1y1x2y2_to_xywh(bbox1)
@@ -82,15 +81,15 @@ def compute_iou(bbox1, bbox2, iou_type='iou'):
     D_box = tf.norm(bbox1_xywh[..., :2] - bbox2_xywh[..., :2], axis=-1)
     D = tf.norm(C[..., :2] - C[..., 2:], axis=-1)
     if iou_type == 'diou':
-        iou -= (D_box / (D+eps)) ** 2
+        iou -= tf.math.divide_no_nan(D_box ,D) ** 2
         return iou
 
     arc_tan1 = tf.math.atan2(bbox1_xywh[..., 2], bbox1_xywh[..., 3])
     arc_tan2 = tf.math.atan2(bbox2_xywh[..., 2], bbox2_xywh[..., 3])
     V = (4 / np.pi ** 2) * (arc_tan1 - arc_tan2) ** 2
-    alpha = V / (1 - iou + V+eps)
+    alpha = tf.math.divide_no_nan(V, 1 - iou + V)
 
-    iou -= (D_box / (D+eps)) ** 2 + alpha * V
+    iou -= tf.math.divide_no_nan(D_box , D) ** 2 + alpha * V
 
     return iou
 

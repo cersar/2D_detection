@@ -145,11 +145,11 @@ def compute_detect_loss(labels,outputs,anchors,CFG):
     cls_loss = compute_cls_loss(cls_outputs, cls_labels, CFG)
     reg_loss = compute_reg_loss(bbox_outputs, box_labels, anchors, CFG)
 
-    cls_loss = tf.reduce_sum(cls_loss*cls_mask,-1)/(tf.reduce_sum(reg_mask,-1)+eps)
-    reg_loss = tf.reduce_sum(reg_loss*reg_mask,-1)/(tf.reduce_sum(reg_mask,-1)+eps)
+    cls_loss = tf.reduce_sum(cls_loss*cls_mask,-1)/tf.clip_by_value(tf.reduce_sum(reg_mask,-1),clip_value_min=1.0,clip_value_max=np.inf)
+    reg_loss = tf.math.divide_no_nan(tf.reduce_sum(reg_loss*reg_mask,-1),tf.reduce_sum(reg_mask,-1))
 
     # print(tf.reduce_sum(reg_mask,-1))
-    print('cls loss: {}, reg loss: {}'.format(tf.reduce_mean(CFG['cls_weight']*cls_loss),tf.reduce_mean(CFG['reg_weight']*reg_loss)))
+    # print('cls loss: {}, reg loss: {}'.format(tf.reduce_mean(CFG['cls_weight']*cls_loss),tf.reduce_mean(CFG['reg_weight']*reg_loss)))
 
     loss = tf.reduce_mean(CFG['cls_weight']*cls_loss+CFG['reg_weight']*reg_loss)
     return loss
